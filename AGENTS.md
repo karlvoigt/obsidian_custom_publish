@@ -3,7 +3,7 @@
 ## Project overview
 
 - Target: Obsidian Community Plugin (TypeScript → bundled JavaScript).
-- Entry point: `main.ts` compiled to `main.js` and loaded by Obsidian.
+- Entry point: `src/main.ts` compiled to `main.js` and loaded by Obsidian.
 - Required release artifacts: `main.js`, `manifest.json`, and optional `styles.css`.
 
 ## Environment & tooling
@@ -35,10 +35,9 @@ npm run build
 
 ## Linting
 
-- To use eslint install eslint from terminal: `npm install -g eslint`
-- To use eslint to analyze this project use this command: `eslint main.ts`
-- eslint will then create a report with suggestions for code improvement by file and line number.
-- If your source code is in a folder, such as `src`, you can use eslint with this command to analyze all files in that folder: `eslint ./src/`
+- ESLint is preconfigured with `eslint-plugin-obsidianmd` for Obsidian-specific rules.
+- Run `npm run lint` to lint the project.
+- A GitHub Action automatically lints every commit on all branches.
 
 ## File & folder conventions
 
@@ -168,10 +167,10 @@ import { MySettings, DEFAULT_SETTINGS } from "./settings";
 import { registerCommands } from "./commands";
 
 export default class MyPlugin extends Plugin {
-  settings: MySettings;
+  settings!: MySettings;
 
   async onload() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MySettings>);
     registerCommands(this);
   }
 }
@@ -221,7 +220,7 @@ interface MySettings { enabled: boolean }
 const DEFAULT_SETTINGS: MySettings = { enabled: true };
 
 async onload() {
-  this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MySettings>);
   await this.saveData(this.settings);
 }
 ```
@@ -230,8 +229,8 @@ async onload() {
 
 ```ts
 this.registerEvent(this.app.workspace.on("file-open", f => { /* ... */ }));
-this.registerDomEvent(window, "resize", () => { /* ... */ });
-this.registerInterval(window.setInterval(() => { /* ... */ }, 1000));
+this.registerDomEvent(activeWindow, "resize", () => { /* ... */ });
+this.registerInterval(activeWindow.setInterval(() => { /* ... */ }, 1000));
 ```
 
 ## Troubleshooting
