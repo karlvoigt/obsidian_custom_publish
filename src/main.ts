@@ -1,16 +1,16 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
+import {App, Editor, MarkdownView, MarkdownFileInfo, Modal, Notice, Plugin} from 'obsidian';
 import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
 
 // Remember to rename these classes and interfaces!
 
 export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+	settings!: MyPluginSettings;
 
 	async onload() {
 		await this.loadSettings();
 
 		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
+		this.addRibbonIcon('dice', 'Sample', (_evt: MouseEvent) => {
 			// Called when the user clicks the icon.
 			new Notice('This is a notice!');
 		});
@@ -31,7 +31,7 @@ export default class MyPlugin extends Plugin {
 		this.addCommand({
 			id: 'replace-selected',
 			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
+			editorCallback: (editor: Editor, _ctx: MarkdownView | MarkdownFileInfo) => {
 				editor.replaceSelection('Sample editor command');
 			}
 		});
@@ -61,12 +61,12 @@ export default class MyPlugin extends Plugin {
 
 		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
+		this.registerDomEvent(activeDocument, 'click', (_evt: MouseEvent) => {
 			new Notice("Click");
 		});
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		this.registerInterval(activeWindow.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 
 	}
 
@@ -88,7 +88,7 @@ class SampleModal extends Modal {
 	}
 
 	onOpen() {
-		let {contentEl} = this;
+		const {contentEl} = this;
 		contentEl.setText('Woah!');
 	}
 

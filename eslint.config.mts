@@ -12,12 +12,10 @@ export default tseslint.config(
 			parserOptions: {
 				projectService: {
 					allowDefaultProject: [
-						'eslint.config.js',
-						'manifest.json'
+						'eslint.config.mts',
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,
-				extraFileExtensions: ['.json']
 			},
 		},
 	},
@@ -26,9 +24,12 @@ export default tseslint.config(
 		"node_modules",
 		"dist",
 		"esbuild.config.mjs",
-		"eslint.config.js",
 		"version-bump.mjs",
 		"versions.json",
 		"main.js",
+		"manifest.json",
+		"package.json",
+		"package-lock.json",
+		"tsconfig.json",
 	]),
 );
