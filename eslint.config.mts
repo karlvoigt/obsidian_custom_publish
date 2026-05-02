@@ -13,9 +13,11 @@ export default tseslint.config(
 				projectService: {
 					allowDefaultProject: [
 						'eslint.config.mts',
+						'manifest.json',
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,
+				extraFileExtensions: ['.json']
 			},
 		},
 	},
@@ -27,8 +29,6 @@ export default tseslint.config(
 		"version-bump.mjs",
 		"versions.json",
 		"main.js",
-		"manifest.json",
-		"package.json",
 		"package-lock.json",
 		"tsconfig.json",
 	]),
