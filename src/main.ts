@@ -1,5 +1,4 @@
 import {
-	App,
 	Editor,
 	MarkdownView,
 	MarkdownFileInfo,
@@ -83,10 +82,7 @@ export default class MyPlugin extends Plugin {
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(
-			activeWindow.setInterval(
-				() => console.log("setInterval"),
-				5 * 60 * 1000,
-			),
+			window.setInterval(() => console.log("setInterval"), 5 * 60 * 1000),
 		);
 	}
 
@@ -106,10 +102,6 @@ export default class MyPlugin extends Plugin {
 }
 
 class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.setText("Woah!");
