@@ -246,7 +246,7 @@ this.registerDomEvent(activeWindow, "resize", () => {
 	/* ... */
 });
 this.registerInterval(
-	activeWindow.setInterval(() => {
+	window.setInterval(() => {
 		/* ... */
 	}, 1000),
 );
