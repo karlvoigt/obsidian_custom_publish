@@ -6,7 +6,7 @@ import * as path from 'path';
 interface DeployerSettings {
 	workingDirectory: string;
 	publishDirectory: string;
-	previouslySelectedFiles: string[]; // Stores state across app reboots
+	previouslySelectedFiles: string[];
 }
 
 const DEFAULT_SETTINGS: DeployerSettings = {
@@ -21,12 +21,12 @@ export default class MasterDeployerPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		// Icon 1: Open the Interactive Checklist Panel
+		// Sidebar Icon: Open Deployment Dashboard
 		this.addRibbonIcon('rocket', 'Open Deployment Dashboard', () => {
 			new DeployModal(this.app, this).open();
 		});
 
-		// Command 1: Open Dashboard
+		// Command 1: Open Deployment Dashboard
 		this.addCommand({
 			id: 'open-deploy-modal',
 			name: 'Open Deployment Dashboard',
@@ -35,7 +35,16 @@ export default class MasterDeployerPlugin extends Plugin {
 			}
 		});
 
-		// Command 2: Deploy Current File Only
+		// Command 2: Open Unpublish Dashboard
+		this.addCommand({
+			id: 'open-unpublish-modal',
+			name: 'Open Unpublish Dashboard',
+			callback: () => {
+				new UnpublishModal(this.app, this).open();
+			}
+		});
+
+		// Command 3: Deploy Current Active File Only
 		this.addCommand({
 			id: 'deploy-current-file',
 			name: 'Deploy Current Active File',
@@ -49,7 +58,7 @@ export default class MasterDeployerPlugin extends Plugin {
 			}
 		});
 
-		// Command 3: Batch Deploy Previous Selections Immediately
+		// Command 4: Batch Redeploy Previous Selections
 		this.addCommand({
 			id: 'redeploy-previous-selection',
 			name: 'Redeploy All Previously Selected Files',
@@ -70,6 +79,15 @@ export default class MasterDeployerPlugin extends Plugin {
 			}
 		});
 
+		// Command 5: Standalone Asset Cleanup Optimization Routine
+		this.addCommand({
+			id: 'run-asset-cleanup',
+			name: 'Clean Orphaned Attachments from Publish Folder',
+			callback: () => {
+				this.executeAttachmentCleanupEngine();
+			}
+		});
+
 		this.addSettingTab(new DeployerSettingTab(this.app, this));
 	}
 
@@ -81,7 +99,7 @@ export default class MasterDeployerPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	// --- CENTRALIZED DISK SYNCHRONIZATION ENGINE ---
+	// --- SYSTEM ENGINE 1: SYNCHRONIZATION ENGINE ---
 	executeDeploymentEngine(filesToDeploy: TFile[]) {
 		const vaultBasePath = (this.app.vault.adapter as any).getBasePath();
 		const publishDirAbs = path.join(vaultBasePath, this.settings.publishDirectory);
@@ -94,19 +112,16 @@ export default class MasterDeployerPlugin extends Plugin {
 			if (!fs.existsSync(attachmentsDirAbs)) fs.mkdirSync(attachmentsDirAbs, { recursive: true });
 
 			filesToDeploy.forEach(file => {
-				// 1. Mirror Folder Structure
 				const relPath = file.path.substring(this.settings.workingDirectory.length + 1);
 				const destPathAbs = path.join(publishDirAbs, relPath);
 				
 				const destDir = path.dirname(destPathAbs);
 				if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
 
-				// 2. Synchronize Markdown File
 				const srcPathAbs = path.join(vaultBasePath, file.path);
 				fs.copyFileSync(srcPathAbs, destPathAbs);
 				successCount++;
 
-				// 3. Resolve and Move Extracted Assets
 				const cache = this.app.metadataCache.getFileCache(file);
 				const linkedAssets = [...(cache?.embeds || []), ...(cache?.links || [])];
 
@@ -127,12 +142,72 @@ export default class MasterDeployerPlugin extends Plugin {
 			new Notice(`Successfully deployed ${successCount} files and their assets.`);
 		} catch (error) {
 			console.error("Deployment Engine Error:", error);
-			new Notice("Deployment execution failed. Check developers console.");
+			new Notice("Deployment execution failed.");
+		}
+	}
+
+	// --- SYSTEM ENGINE 2: RECURSIVE ATTACHMENT CLEANUP ENGINE ---
+	executeAttachmentCleanupEngine() {
+		const vaultBasePath = (this.app.vault.adapter as any).getBasePath();
+		const publishDirAbs = path.join(vaultBasePath, this.settings.publishDirectory);
+		const attachmentsDirAbs = path.join(publishDirAbs, 'attachments');
+
+		if (!fs.existsSync(attachmentsDirAbs)) {
+			return; // No attachments exist yet, skip execution safely
+		}
+
+		try {
+			const activeAssetNames = new Set<string>();
+
+			// Step A: Parse active entries by reading files currently living inside the staged publish tree
+			this.settings.previouslySelectedFiles.forEach(filePath => {
+				const file = this.app.vault.getAbstractFileByPath(filePath);
+				if (file instanceof TFile) {
+					// Verify if it actively exists inside our publish disk path before counting references
+					const relPath = file.path.substring(this.settings.workingDirectory.length + 1);
+					const publishedFileAbs = path.join(publishDirAbs, relPath);
+
+					if (fs.existsSync(publishedFileAbs)) {
+						const cache = this.app.metadataCache.getFileCache(file);
+						const links = [...(cache?.embeds || []), ...(cache?.links || [])];
+						links.forEach(l => {
+							const target = this.app.metadataCache.getFirstLinkpathDest(l.link, file.path);
+							if (target && target.extension !== 'md') {
+								activeAssetNames.add(target.name);
+							}
+						});
+					}
+				}
+			});
+
+			// Step B: Walk the disk store of the attachments staging folder and filter orphaned allocations
+			const filesOnDisk = fs.readdirSync(attachmentsDirAbs);
+			let deleteCount = 0;
+
+			filesOnDisk.forEach(fileName => {
+				// Avoid cleaning out standard project metadata components if present
+				if (fileName === '.DS_Store') return;
+
+				if (!activeAssetNames.has(fileName)) {
+					const targetOrphanAbs = path.join(attachmentsDirAbs, fileName);
+					fs.unlinkSync(targetOrphanAbs);
+					deleteCount++;
+				}
+			});
+
+			if (deleteCount > 0) {
+				new Notice(`Garbage Collector: Removed ${deleteCount} unused attachment assets.`);
+			} else {
+				new Notice("Garbage Collector: Build files optimization up-to-date.");
+			}
+		} catch (error) {
+			console.error("Cleanup Optimization Engine Failure:", error);
+			new Notice("Asset cleanup extraction encounter trace failure.");
 		}
 	}
 }
 
-// --- INTERACTIVE CHECKLIST DASHBOARD DIALOG ---
+// --- PANEL UI A: DEPLOYMENT SELECTION PANEL ---
 class DeployModal extends Modal {
 	plugin: MasterDeployerPlugin;
 	selectedFiles: Set<string>;
@@ -140,7 +215,6 @@ class DeployModal extends Modal {
 	constructor(app: App, plugin: MasterDeployerPlugin) {
 		super(app);
 		this.plugin = plugin;
-		// Initialize the set using the stored array from previous selections
 		this.selectedFiles = new Set(this.plugin.settings.previouslySelectedFiles);
 	}
 
@@ -149,7 +223,7 @@ class DeployModal extends Modal {
 		contentEl.empty();
 		
 		contentEl.createEl('h2', { text: 'Deployment Dashboard' });
-		contentEl.createEl('p', { text: `Select files from '${this.plugin.settings.workingDirectory}' to stage for publishing. Selections are remembered automatically.`, cls: 'setting-item-description' });
+		contentEl.createEl('p', { text: `Select files from '${this.plugin.settings.workingDirectory}' to stage for publishing.`, cls: 'setting-item-description' });
 
 		const allFiles = this.app.vault.getMarkdownFiles();
 		const workingFiles = allFiles.filter(file => file.path.startsWith(this.plugin.settings.workingDirectory + '/'));
@@ -176,10 +250,7 @@ class DeployModal extends Modal {
 			const checkbox = row.createEl('input', { type: 'checkbox' });
 			checkbox.style.marginRight = '10px';
 			
-			// RESTORE CHECKED STATE: Check if file was selected in the past
-			if (this.selectedFiles.has(file.path)) {
-				checkbox.checked = true;
-			}
+			if (this.selectedFiles.has(file.path)) checkbox.checked = true;
 			
 			const displayName = file.path.substring(this.plugin.settings.workingDirectory.length + 1);
 			row.createEl('label', { text: displayName });
@@ -199,7 +270,6 @@ class DeployModal extends Modal {
 
 		const submitBtn = btnContainer.createEl('button', { text: 'Deploy Selected Files', cls: 'mod-cta' });
 		submitBtn.addEventListener('click', async () => {
-			// PERSIST SELECTIONS: Convert the set back to array and save to settings
 			this.plugin.settings.previouslySelectedFiles = Array.from(this.selectedFiles);
 			await this.plugin.saveSettings();
 
@@ -210,12 +280,116 @@ class DeployModal extends Modal {
 	}
 
 	onClose() {
-		const { contentEl } = this;
-		contentEl.empty();
+		this.contentEl.empty();
 	}
 }
 
-// --- SETTINGS CONTROL INTERFACE ---
+// --- PANEL UI B: UNPUBLISH SELECTION PANEL ---
+class UnpublishModal extends Modal {
+	plugin: MasterDeployerPlugin;
+	filesToUnpublish: Set<string> = new Set();
+
+	constructor(app: App, plugin: MasterDeployerPlugin) {
+		super(app);
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+
+		contentEl.createEl('h2', { text: 'Unpublish Dashboard' });
+		contentEl.createEl('p', { text: 'Select currently staged files to delete from the Vercel publish tracking stream.', cls: 'setting-item-description' });
+
+		const vaultBasePath = (this.app.vault.adapter as any).getBasePath();
+		const publishDirAbs = path.join(vaultBasePath, this.plugin.settings.publishDirectory);
+
+		// Scan tracking history mapping against files physically existing on disk
+		const activeTrackedFiles = this.plugin.settings.previouslySelectedFiles.filter(filePath => {
+			const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+			if (!(file instanceof TFile)) return false;
+			const relPath = file.path.substring(this.plugin.settings.workingDirectory.length + 1);
+			return fs.existsSync(path.join(publishDirAbs, relPath));
+		});
+
+		if (activeTrackedFiles.length === 0) {
+			contentEl.createEl('p', { text: 'There are no active files currently staged inside the publish directory.', cls: 'setting-item-description' });
+			return;
+		}
+
+		const listContainer = contentEl.createDiv({ cls: 'deployer-file-list' });
+		listContainer.style.maxHeight = '300px';
+		listContainer.style.overflowY = 'auto';
+		listContainer.style.border = '1px solid var(--background-modifier-border)';
+		listContainer.style.padding = '10px';
+		listContainer.style.borderRadius = '5px';
+		listContainer.style.marginBottom = '20px';
+
+		activeTrackedFiles.forEach(filePath => {
+			const file = this.plugin.app.vault.getAbstractFileByPath(filePath) as TFile;
+			const row = listContainer.createDiv();
+			row.style.display = 'flex';
+			row.style.alignItems = 'center';
+			row.style.marginBottom = '5px';
+
+			const checkbox = row.createEl('input', { type: 'checkbox' });
+			checkbox.style.marginRight = '10px';
+
+			const displayName = file.path.substring(this.plugin.settings.workingDirectory.length + 1);
+			row.createEl('label', { text: displayName });
+
+			checkbox.addEventListener('change', (e) => {
+				if ((e.target as HTMLInputElement).checked) {
+					this.filesToUnpublish.add(filePath);
+				} else {
+					this.filesToUnpublish.delete(filePath);
+				}
+			});
+		});
+
+		const btnContainer = contentEl.createDiv();
+		btnContainer.style.display = 'flex';
+		btnContainer.style.justifyContent = 'flex-end';
+
+		const removeBtn = btnContainer.createEl('button', { text: 'Unpublish Selected Files', cls: 'mod-warning' });
+		removeBtn.style.backgroundColor = 'var(--text-error)';
+		removeBtn.style.color = 'white';
+		
+		removeBtn.addEventListener('click', async () => {
+			let unpublishCount = 0;
+
+			activeTrackedFiles.forEach(filePath => {
+				if (this.filesToUnpublish.has(filePath)) {
+					const file = this.plugin.app.vault.getAbstractFileByPath(filePath) as TFile;
+					const relPath = file.path.substring(this.plugin.settings.workingDirectory.length + 1);
+					const publishedFileAbs = path.join(publishDirAbs, relPath);
+
+					// Delete Markdown File from the Vercel Directory
+					if (fs.existsSync(publishedFileAbs)) {
+						fs.unlinkSync(publishedFileAbs);
+						unpublishCount++;
+					}
+
+					// Remove from internal deployment tracking configurations completely
+					this.plugin.settings.previouslySelectedFiles = this.plugin.settings.previouslySelectedFiles.filter(item => item !== filePath);
+				}
+			});
+
+			await this.plugin.saveSettings();
+			new Notice(`Successfully removed ${unpublishCount} tracking documents from staging output directory.`);
+
+			// AUTOMATIC CLEANUP: Cascade asset scan sweep straight after unpublish task drops reference links
+			this.plugin.executeAttachmentCleanupEngine();
+			this.close();
+		});
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+// --- SETTINGS MAPPING TAB ---
 class DeployerSettingTab extends PluginSettingTab {
 	plugin: MasterDeployerPlugin;
 
